@@ -1,0 +1,8 @@
+name: SavedResidences
+version: 1.0
+api-version: 1.13
+main: cc.globalserver.SavedResidences.Main
+commands:
+  ac:
+    description: Save favourite residences
+    usage: /<command>
