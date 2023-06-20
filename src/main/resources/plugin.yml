@@ -1,8 +1,14 @@
 name: SavedResidences
 version: 1.0
-api-version: 1.13
+api-version: 1.17
 main: cc.globalserver.SavedResidences.Main
 commands:
-  ac:
+  srgui:
     description: Save favourite residences
     usage: /<command>
+  sradd:
+    description: General command
+    usage: /<command> name
+  srcheck:
+    description: check players
+    usage: /<command> player
