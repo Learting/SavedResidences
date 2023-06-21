@@ -1,13 +1,10 @@
-messages:
-  guiTitle: "&a领地收藏"
-  deleteModeTitle: "&c注意：删除模式操作不可撤销"
-  addButton: "添加收藏"
-  deleteButton: "删除模式"
-  goBackButton: "正常模式"
-  targetNotFound: "&c玩家不存在"
-  usageSrcheck: "&c查询用法: /srcheck <player>"
-  usageSradd: "&c直接添加收藏用法: /sradd <name>"
-  noPermission: "&c您没有权限"
-  added: "&a收藏成功"
-  deleted: "&c删除成功"
-  enterName: "&a请输入您要收藏的领地名："
+gui:
+  title: "领地收藏"
+  add: "&a添加"
+  left: "&a左键以传送至此"
+  right: "&c右键来删除"
+residence:
+  deleted: "&c已删除领地收藏 '{name}'"
+  prompt: "&e请输入要收藏的领地名："
+  saved: "&a领地 '{name}' 已收藏"
+

@@ -1,197 +1,182 @@
 package cc.globalserver.SavedResidences;
 
-import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
-import org.bukkit.Material;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
-import org.bukkit.command.CommandSender;
-import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.*;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.enchantments.Enchantment;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.file.Paths;
+import java.util.*;
 
-public class Main extends JavaPlugin implements Listener, CommandExecutor {
+public class Main extends JavaPlugin implements Listener {
+    
+    private final Map<UUID, List<String>> residences = new HashMap<>();
+    private final Map<UUID, Boolean> addingResidence = new HashMap<>();
 
-    private File configFile;
-    private FileConfiguration config;
+    private File dataFolder;
+
+    private LanguageProperty messages;
+
+    private String inventoryName;
 
     @Override
     public void onEnable() {
-        Bukkit.getServer().getPluginManager().registerEvents(this, this);
-        getCommand("srgui").setExecutor(this);
-        getCommand("srcheck").setExecutor(this);
-        getCommand("sradd").setExecutor(this);
+        getServer().getPluginManager().registerEvents(this, this);
 
-        configFile = new File(getDataFolder(), "messages.yml");
-        if (!configFile.exists()) {
+        dataFolder = new File(getDataFolder(), "residences");
+        if (!dataFolder.exists()) {
+            dataFolder.mkdirs();
+        }
+
+        messages = new LanguageProperty();
+        File langFile = new File(getDataFolder(), "messages.yml");
+        if (!langFile.exists()) {
             saveResource("messages.yml", false);
         }
-        config = YamlConfiguration.loadConfiguration(configFile);
+        messages.loadConfiguration(langFile);
+
+        inventoryName = ChatColor.translateAlternateColorCodes('&', messages.get("gui.title"));
+
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            loadResidences(player);
+        }
     }
 
     @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) return true;
-        Player player = (Player) sender;
-
-        if (command.getName().equalsIgnoreCase("srgui")) {
-            openGui(player, false);
-            return true;
-        } else if (command.getName().equalsIgnoreCase("srcheck")) {
-            if (player.hasPermission("srgui.check")) {
-                if(args.length == 1) {
-                    Player target = Bukkit.getPlayerExact(args[0]);
-                    if(target != null) {
-                        openGui(player, true, target);
-                    } else {
-                        player.sendMessage(ChatColor.translateAlternateColorCodes('&', config.getString("messages.targetNotFound")));
-                    }
-                } else {
-                    player.sendMessage(ChatColor.translateAlternateColorCodes('&', config.getString("messages.usageSrcheck")));
-                }
-            } else {
-                player.sendMessage(ChatColor.translateAlternateColorCodes('&', config.getString("messages.noPermission")));
-            }
-            return true;
-        } else if (command.getName().equalsIgnoreCase("sradd")) {
-            if (args.length == 1) {
-                addSavedName(player, args[0]);
-                player.sendMessage(ChatColor.translateAlternateColorCodes('&', config.getString("messages.added")));
-            } else {
-                player.sendMessage(ChatColor.translateAlternateColorCodes('&', config.getString("messages.usageSradd")));
-            }
-            return true;
+    public void onDisable() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            saveResidences(player);
         }
-
-        return false;
+        residences.clear();
     }
 
-    private void openGui(Player player, boolean isAdmin, Player... targetPlayers) {
-        Player target = (targetPlayers.length == 1) ? targetPlayers[0] : player;
-        Inventory inv = Bukkit.createInventory(null, 54, ChatColor.translateAlternateColorCodes('&', config.getString("messages.guiTitle")));
+    @EventHandler
+    public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
+        String command = event.getMessage().toLowerCase();
+        if ("/srgui".equals(command)) {
+            event.setCancelled(true);
+            openInventory(event.getPlayer());
+        }
+    }
 
-        List<String> savedNames = getSavedNames(target);
-        for (int i = 0; i < savedNames.size(); i++) {
-            ItemStack item = new ItemStack(Material.PAPER);
-            ItemMeta meta = item.getItemMeta();
-            meta.setDisplayName(ChatColor.AQUA + savedNames.get(i));
-            item.setItemMeta(meta);
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent e) {
+        if (!e.getView().getTitle().equals(inventoryName)) {
+            return;
+        }
+        if (e.getClick().isKeyboardClick()) {
+            if (e.getClickedInventory() == e.getView().getTopInventory()) {
+                e.setCancelled(true);
+                return;
+            }
+        }
+        e.setCancelled(true);
+        if (e.getCurrentItem().getType().equals(Material.WHITE_STAINED_GLASS_PANE)) {
+            String resLoc = ChatColor.stripColor(e.getCurrentItem().getItemMeta().getDisplayName());
+            Player player = (Player) e.getWhoClicked();
+            if (e.isLeftClick()) {
+                // Execute res tp
+                player.performCommand("res tp " + resLoc);
+                player.closeInventory();
+            } else if (e.isRightClick()) {
+                residences.get(player.getUniqueId()).remove(resLoc);
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', messages.get("residence.deleted").replace("{name}", resLoc)));
+                openInventory(player);
+            }
+        } else if (e.getCurrentItem().getType().equals(Material.LIME_STAINED_GLASS_PANE)) {
+            addingResidence.put(e.getWhoClicked().getUniqueId(), true);
+            Player player = (Player) e.getWhoClicked();
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', messages.get("residence.prompt")));
+            e.getWhoClicked().closeInventory();
+        }
+    }
 
-            inv.setItem(i, item);
+    @EventHandler
+    public void onAsyncPlayerChat(AsyncPlayerChatEvent event) {
+        UUID uuid = event.getPlayer().getUniqueId();
+        if (addingResidence.remove(uuid) != null) {
+            event.setCancelled(true);
+
+            List<String> playerResidences = residences.get(uuid);
+            if (playerResidences == null) {
+                playerResidences = new ArrayList<>();
+                residences.put(uuid, playerResidences);
+            }
+            residences.get(uuid).add(event.getMessage());
+            saveResidences(event.getPlayer());
+            event.getPlayer().sendMessage(ChatColor.translateAlternateColorCodes('&', messages.get("residence.saved").replace("{name}", event.getMessage())));
+        }
+    }
+
+    private void openInventory(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 54, inventoryName);
+
+        List<String> residenceList = residences.get(player.getUniqueId());
+
+        // If null then init
+        if (residenceList != null) {
+            for (int i = 0; i < residenceList.size(); i++) {
+                inv.setItem(i, createItem(residenceList.get(i)));
+            }
         }
 
-        if (!isAdmin) {
-            ItemStack addButton = new ItemStack(Material.GREEN_STAINED_GLASS_PANE);
-            ItemMeta addButtonMeta = addButton.getItemMeta();
-            addButtonMeta.setDisplayName(ChatColor.GREEN + config.getString("messages.addButton"));
-            addButton.setItemMeta(addButtonMeta);
-
-            ItemStack deleteButton = new ItemStack(Material.RED_STAINED_GLASS_PANE);
-            ItemMeta deleteButtonMeta = deleteButton.getItemMeta();
-            deleteButtonMeta.setDisplayName(ChatColor.RED + config.getString("messages.deleteButton"));
-            deleteButton.setItemMeta(deleteButtonMeta);
-
-            inv.setItem(53, addButton);
-            inv.setItem(52, deleteButton);
-        }
-
+        inv.setItem(inv.getSize() - 1, createAddItem());
         player.openInventory(inv);
     }
 
-    @EventHandler
-    public void onInventoryClick(InventoryClickEvent event) {
-        if (!event.getView().getTitle().equals(ChatColor.translateAlternateColorCodes('&', config.getString("messages.guiTitle"))) &&
-                !event.getView().getTitle().equals(ChatColor.translateAlternateColorCodes('&', config.getString("messages.deleteModeTitle")))) {
-            return;
-        }
-
-        event.setCancelled(true);
-        ItemStack item = event.getCurrentItem();
-        Player player = (Player) event.getWhoClicked();
-        boolean isDeleteMode = event.getView().getTitle().equals(ChatColor.translateAlternateColorCodes('&', config.getString("messages.deleteModeTitle")));
-
-        if (item == null || item.getType() == Material.AIR) return;
-
-        if (item.getType() == Material.PAPER && !isDeleteMode) {
-            player.performCommand("res tp " + ChatColor.stripColor(item.getItemMeta().getDisplayName()));
-            player.closeInventory();
-        } else if (item.getType() == Material.PAPER && isDeleteMode) {
-            deleteSavedName(player, ChatColor.stripColor(item.getItemMeta().getDisplayName()));
-            player.sendMessage(ChatColor.translateAlternateColorCodes('&', config.getString("messages.deleted")));
-            openGui(player, true);
-        } else if (item.getType() == Material.GREEN_STAINED_GLASS_PANE) {
-            player.sendMessage(ChatColor.translateAlternateColorCodes('&', config.getString("messages.enterName")));
-            player.closeInventory();
-        } else if (item.getType() == Material.RED_STAINED_GLASS_PANE) {
-            if (isDeleteMode) {
-                openGui(player, false);
-            } else {
-                Inventory deleteModeInv = Bukkit.createInventory(null, 54, ChatColor.translateAlternateColorCodes('&', config.getString("messages.deleteModeTitle")));
-                deleteModeInv.setContents(event.getClickedInventory().getContents());
-
-                ItemStack goBackButton = new ItemStack(Material.RED_STAINED_GLASS_PANE);
-                ItemMeta goBackButtonMeta = goBackButton.getItemMeta();
-                goBackButtonMeta.setDisplayName(ChatColor.RED + config.getString("messages.goBackButton"));
-                goBackButton.setItemMeta(goBackButtonMeta);
-
-                deleteModeInv.setItem(52, goBackButton);
-                player.openInventory(deleteModeInv);
-            }
+    private void loadResidences(Player player) {
+        File playerFile = new File(dataFolder, player.getUniqueId().toString() + ".yml");
+        if (playerFile.exists()) {
+            FileConfiguration config = YamlConfiguration.loadConfiguration(playerFile);
+            residences.put(player.getUniqueId(), new ArrayList<>(config.getStringList("residences")));
+        } else {
+            residences.put(player.getUniqueId(), new ArrayList<>());
         }
     }
 
-    @EventHandler
-    public void onInventoryClose(InventoryCloseEvent event) {
-        if (event.getView().getTitle().equals(ChatColor.translateAlternateColorCodes('&', config.getString("messages.deleteModeTitle")))) {
-            openGui((Player)event.getPlayer(), false);
-        }
-    }
-
-    private List<String> getSavedNames(Player player) {
-        return getPlayerData(player).getStringList("names");
-    }
-
-    private void addSavedName(Player player, String name) {
-        FileConfiguration playerData = getPlayerData(player);
-        List<String> savedNames = playerData.getStringList("names");
-        savedNames.add(name);
-        playerData.set("names", savedNames);
-        savePlayerData(player, playerData);
-    }
-
-    private void deleteSavedName(Player player, String name) {
-        FileConfiguration playerData = getPlayerData(player);
-        List<String> savedNames = playerData.getStringList("names");
-        savedNames.remove(name);
-        playerData.set("names", savedNames);
-        savePlayerData(player, playerData);
-    }
-
-    private FileConfiguration getPlayerData(Player player) {
-        File playerDataFile = new File(getDataFolder() + File.separator + "playerdata", player.getUniqueId().toString() + ".yml");
-        return YamlConfiguration.loadConfiguration(playerDataFile);
-    }
-
-    private void savePlayerData(Player player, FileConfiguration playerData) {
-        File playerDataFile = new File(getDataFolder() + File.separator + "playerdata", player.getUniqueId().toString() + ".yml");
+    private void saveResidences(Player player) {
+        File playerFile = new File(dataFolder, player.getUniqueId().toString() + ".yml");
+        FileConfiguration config = YamlConfiguration.loadConfiguration(playerFile);
+        config.set("residences", new ArrayList<>(residences.get(player.getUniqueId())));
         try {
-            playerData.save(playerDataFile);
+            config.save(playerFile);
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private ItemStack createItem(String resName) {
+        ItemStack itemStack = new ItemStack(Material.WHITE_STAINED_GLASS_PANE, 1);
+        ItemMeta itemMeta = itemStack.getItemMeta();
+        itemMeta.setDisplayName(resName);
+
+        List<String> lore = new ArrayList<>();
+        lore.add(ChatColor.translateAlternateColorCodes('&', messages.get("gui.left")));
+        lore.add(ChatColor.translateAlternateColorCodes('&', messages.get("gui.right")));
+        itemMeta.setLore(lore);
+        itemStack.setItemMeta(itemMeta);
+        return itemStack;
+    }
+
+    private ItemStack createAddItem() {
+        ItemStack itemStack = new ItemStack(Material.LIME_STAINED_GLASS_PANE, 1);
+        ItemMeta itemMeta = itemStack.getItemMeta();
+        itemMeta.setDisplayName(ChatColor.translateAlternateColorCodes('&', messages.get("gui.add")));
+        itemStack.setItemMeta(itemMeta);
+        return itemStack;
     }
 }
