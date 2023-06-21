@@ -92,6 +92,12 @@ public class Main extends JavaPlugin implements Listener {
             }
         }
         e.setCancelled(true);
+
+        ItemStack currentItem = e.getCurrentItem();
+        if (currentItem == null || currentItem.getType() == Material.AIR) {
+            return; // Ignore empty slots
+        }
+
         if (e.getCurrentItem().getType().equals(Material.WHITE_STAINED_GLASS_PANE)) {
             String resLoc = ChatColor.stripColor(e.getCurrentItem().getItemMeta().getDisplayName());
             Player player = (Player) e.getWhoClicked();
