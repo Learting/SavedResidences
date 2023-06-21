@@ -3,6 +3,7 @@ gui:
   add: "&a添加"
   left: "&a左键以传送至此"
   right: "&c右键来删除"
+  back: "&5返回"
 residence:
   deleted: "&c已删除领地收藏 '{name}'"
   prompt: "&e请输入要收藏的领地名："

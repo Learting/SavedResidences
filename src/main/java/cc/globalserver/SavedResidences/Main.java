@@ -28,6 +28,7 @@ public class Main extends JavaPlugin implements Listener {
     private final Map<UUID, Boolean> addingResidence = new HashMap<>();
 
     private File dataFolder;
+    private FileConfiguration config;
 
     private LanguageProperty messages;
 
@@ -48,6 +49,12 @@ public class Main extends JavaPlugin implements Listener {
             saveResource("messages.yml", false);
         }
         messages.loadConfiguration(langFile);
+
+        File configFile = new File(getDataFolder(), "config.yml");
+        if (!configFile.exists()) {
+            saveResource("config.yml", false);
+        }
+        config = YamlConfiguration.loadConfiguration(configFile);
 
         inventoryName = ChatColor.translateAlternateColorCodes('&', messages.get("gui.title"));
 
@@ -102,6 +109,11 @@ public class Main extends JavaPlugin implements Listener {
             Player player = (Player) e.getWhoClicked();
             player.sendMessage(ChatColor.translateAlternateColorCodes('&', messages.get("residence.prompt")));
             e.getWhoClicked().closeInventory();
+        } else if (e.getCurrentItem().getType().equals(Material.ORANGE_STAINED_GLASS_PANE)) {
+            Player player = (Player) e.getWhoClicked();
+            String command = config.getString("backCommand");
+            player.performCommand(command);
+            player.closeInventory();
         }
     }
 
@@ -134,6 +146,9 @@ public class Main extends JavaPlugin implements Listener {
             }
         }
 
+        if (config.getBoolean("backButton")) {
+            inv.setItem(inv.getSize() - 9, createBackButton());
+        }
         inv.setItem(inv.getSize() - 1, createAddItem());
         player.openInventory(inv);
     }
@@ -157,6 +172,14 @@ public class Main extends JavaPlugin implements Listener {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private ItemStack createBackButton() {
+        ItemStack itemStack = new ItemStack(Material.ORANGE_STAINED_GLASS_PANE, 1);
+        ItemMeta itemMeta = itemStack.getItemMeta();
+        itemMeta.setDisplayName(ChatColor.translateAlternateColorCodes('&', messages.get("gui.back")));
+        itemStack.setItemMeta(itemMeta);
+        return itemStack;
     }
 
     private ItemStack createItem(String resName) {
